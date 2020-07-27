@@ -7,29 +7,28 @@ import (
 	"testing"
 )
 
-func TestRecordingWinsAndRetrievingThem(t *testing.T) {
-	store := NewInMemoryPlayerStore()
-	server := PlayerServer{store}
-	player := "Alam"
+type StubPlayerStore struct {
+	scores   map[string]int
+	winCalls []string
+}
 
-	server.ServeHTTP(httptest.NewRecorder(), newPostScoreRequest(player))
-	server.ServeHTTP(httptest.NewRecorder(), newPostScoreRequest(player))
-	server.ServeHTTP(httptest.NewRecorder(), newPostScoreRequest(player))
+func (s *StubPlayerStore) GetPlayerScore(name string) int {
+	score := s.scores[name]
+	return score
+}
 
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, newGetScoreRequest(player))
-	assertHTTPCodes(t, response.Code, http.StatusOK)
-	assertBodyResponse(t, response.Body.String(), "3")
+func (s *StubPlayerStore) RecordWin(name string) {
+	s.winCalls = append(s.winCalls, name)
 }
 
 func TestGETPlayers(t *testing.T) {
-	storeScores := StubPlayerStore{
+	storeScores := InMemoryPlayerStore{
 		map[string]int{
 			"Alam":  20,
 			"Dimas": 10,
-		}, nil,
+		},
 	}
-	server := &PlayerServer{&storeScores}
+	server := NewPlayerServer(&storeScores)
 
 	t.Run("returns Alam's score", func(t *testing.T) {
 		request := newGetScoreRequest("Alam")
@@ -61,24 +60,37 @@ func TestGETPlayers(t *testing.T) {
 }
 
 func TestStoreWins(t *testing.T) {
-	storeScores := StubPlayerStore{
-		map[string]int{},
-		nil,
-	}
-	server := &PlayerServer{&storeScores}
+	storeScores := NewInMemoryPlayerStore()
+	server := NewPlayerServer(storeScores)
 
 	t.Run("it records win when POST", func(t *testing.T) {
-		request := newPostScoreRequest("Alam")
+		player := "Alam"
+
+		request := newPostScoreRequest(player)
 		response := httptest.NewRecorder()
 
 		server.ServeHTTP(response, request)
 
 		assertHTTPCodes(t, response.Code, http.StatusAccepted)
-		if len(storeScores.winCalls) != 1 {
-			t.Errorf("got %d, expected %d", len(storeScores.winCalls), 1)
+		if len(storeScores.store) != 1 {
+			t.Errorf("got %d, expected %d", len(storeScores.store), 1)
 
 		}
 	})
+}
+
+func TestLeague(t *testing.T) {
+	storeScores := NewInMemoryPlayerStore()
+	server := NewPlayerServer(storeScores)
+
+	t.Run("it return status OK", func(t *testing.T) {
+		request, _ := http.NewRequest(http.MethodGet, "/league", nil)
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+
+		assertHTTPCodes(t, response.Code, http.StatusOK)
+	},
+	)
 }
 
 func newPostScoreRequest(name string) *http.Request {
